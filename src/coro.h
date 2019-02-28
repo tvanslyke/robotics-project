@@ -15,7 +15,7 @@ void yield_fast_to(Coroutine& coro);
 
 void yield_to(Coroutine& coro);
 
-void yield();
+
 
 namespace detail {
 
@@ -142,16 +142,6 @@ namespace detail {
 
 template <class Callable>
 void start_coroutine(Coroutine* caller, Callable* callable) {
-	{
-		volatile char stack_byte;
-		Serial.print("start_coroutine(");
-		Serial.print(reinterpret_cast<uint16_t>(Coroutine::currently_running), HEX);
-		Serial.print(", ");
-		Serial.print(reinterpret_cast<uint16_t>(callable));
-		Serial.print(") with stack address ");
-		Serial.println(reinterpret_cast<uint16_t>(&stack_byte));
-		Serial.flush();
-	}
 	assert(Coroutine::currently_running);
 	assert(Coroutine::currently_running != caller);
 	yield_to(*caller);
@@ -189,7 +179,7 @@ struct UniqueCoroutine: Coroutine {
 		callable_(callable),
 		stack_{0}
 	{
-
+		
 	}
 
 	void start() {
@@ -219,6 +209,19 @@ UniqueCoroutine<decltype(Fn), 128u> CoroutineDefinition<Fn>::value = UniqueCorou
 
 } /* namespace detail */
 
+inline void sleep_millis(unsigned long duration, Coroutine& coro = Coroutine::main) {
+	auto start = millis();
+	while(static_cast<unsigned long>(millis() - start) < duration) {
+		yield_to(coro);
+	}
+}
+
+inline void sleep_micros(unsigned long duration, Coroutine& coro = Coroutine::main) {
+	auto start = micros();
+	while(static_cast<unsigned long>(micros() - start) < duration) {
+		yield_to(coro);
+	}
+}
 
 } /* namespace tim::coro */
 
