@@ -2,9 +2,9 @@
 #include <cstddef>
 #include "coro.h"
 #include "i2c_line_follower.h"
-#include "Stepper.h"
 #include <limits.h>
 #include "motor_control.h"
+#include "PIDController.h"
 
 using namespace tim::coro;
 
@@ -107,37 +107,111 @@ void escape(void* p) {
 	asm volatile("" : : "g"(p) : "memory");
 }
 
+static ino::PIDController<
+	int32_t,
+	int32_t,
+	int32_t
+> pid_control{};
+
+constexpr ino::PIDCoeffs position_coeffs{2.0, 0.1, -3.0};
+
 void setup() {
 	Serial.begin(115200);
 	Serial.println("Initializing...");
 	Serial.flush();
 	Serial.setTimeout(LONG_MAX);
+	pinMode(8, INPUT_PULLUP);
+	pinMode(13, OUTPUT);
+	pinMode(A0, INPUT);
 	ino::initialize_i2c();
 	ino::left_motor_control.begin();
 	ino::right_motor_control.begin();
 	ino::setup_encoder_interrupts();
+	// pinMode(2, INPUT);
+	Serial.println("Done");
+	Serial.flush();
 }
 
 static uint8_t readings[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+static ino::SensorCalibration<uint8_t> calibrations[8] = {};
+
 void loop() {
+	using namespace ino;
+	uint8_t speed = 0u;
+	// ino::calibrate_line_sensor(calibrations, 8);
 	while(true) {
-		// Serial.print(ino::left_motor_control.ticks());
+		// ino::update_readings(readings);
+		// ino::standardize_readings(readings, calibrations);
+		// for(uint8_t i = 0; i < 7; ++i) {
+		// 	printu8(readings[i]);
+		// 	Serial.print(' ');
+		// }
+		// Serial.print(':');
+		// Serial.println(compute_error(readings));
+		
+		// Serial.print(ino::right_motor_control.ticks());
 		// Serial.print(' ');
 		// Serial.println(ino::right_motor_control.ticks());
-		Serial.print(ino::interrupt_count);
-		Serial.print(' ');
-		Serial.print(ino::left_motor_control.ticks());
-		Serial.print(' ');
-		Serial.println(ino::right_motor_control.ticks());
+		// delay(10);
+		// right_motor_control.set_speed(speed);
+		// if(speed == 0u) {
+		// 	right_motor_control.brake();
+		// 	delay(1000);
+		// 	right_motor_control.drive();
+		// }
+		// ++speed;
+		Serial.print("ino> ");
+		long setpoint = Serial.parseInt();
+		while(Serial.available() > 0) {
+			Serial.read();
+		}
+		for(;;) {
+			auto ticks = ino::left_motor_control.ticks();
+			int32_t error = setpoint - ticks;
+			float pid_value = pid_control.update(error, position_coeffs);
+			Serial.print("setpoint=");
+			Serial.print(setpoint);
+			Serial.print(", actual=");
+			Serial.print(ticks);
+			Serial.print(", actual2=");
+			Serial.print(ino::right_motor_control.ticks());
+			Serial.print(", pid=");
+			Serial.print(pid_value);
+			Serial.print(", lp1=");
+			Serial.print(ino::get_pulse_width<5>());
+			Serial.print(", lp2=");
+			Serial.print(ino::get_pulse_width<10>());
+			Serial.print(", rp1=");
+			Serial.print(ino::get_pulse_width<6>());
+			Serial.print(", rp2=");
+			Serial.println(ino::get_pulse_width<9>());
+			uint8_t pwm_value = 0;
+			MotorDirection dir = MotorDirection::Forward;
+			if(pid_value < 0.0f) {
+				dir = MotorDirection::Forward;
+				if(pid_value < -200.0f) {
+					pwm_value = 200u;
+				} else {
+					pwm_value = static_cast<uint8_t>(-pid_value);
+				}
+			} else {
+				dir = MotorDirection::Backward;
+				if(pid_value > 200.0f) {
+					pwm_value = 200u;
+				} else {
+					pwm_value = static_cast<uint8_t>(pid_value);
+				}
+			}
+			left_motor_control.set_motion(dir, pwm_value);
+			if(Serial.available() != 0) {
+				Serial.println("Reading from serial!");
+				setpoint = Serial.parseInt();
+				while(Serial.available() > 0) {
+					Serial.read();
+				}
+			}
+		}
 	}
-	// Serial.print(stepper.position());
-	// Serial.print("> ");
-	// long val = Serial.parseInt();
-	// if(val < 0 or val > 99) {
-	// 	Serial.println("Bad position");
-	// } else {
-	// 	stepper.set_position(val);
-	// }
 }
 
 int main(void)

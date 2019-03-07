@@ -118,19 +118,14 @@ static uint8_t become_master_reader(uint8_t addr) {
 
 struct ScopedI2CTransmission {
 
-	ScopedI2CTransmission() {
-		
-	}
-
 	~ScopedI2CTransmission() {
 		send_stop_condition();
 	}
 };
 
 /* Called only when we're master reader mode. */
-static int8_t receive_readings(uint8_t (&readings)[8], float alpha) {
+static int8_t receive_readings(uint8_t (&readings)[8]) {
 	// Do this for the first 7 samples; the last sample (16th byte) has slightly different logic.
-	float alpha_inv = (1.0f - alpha);
 	for(uint8_t i = 0u; i < 7u; ++i) {
 		send_ack();
 		if(wait_for_interrupt() != TW_MR_DATA_ACK) {
@@ -139,7 +134,7 @@ static int8_t receive_readings(uint8_t (&readings)[8], float alpha) {
 			return -1;
 		}
 		uint8_t byte = TWDR;
-		readings[i] = alpha * byte + alpha_inv * readings[i];
+		readings[i] = byte;
 		send_ack();
 		if(wait_for_interrupt() != TW_MR_DATA_ACK) {
 			// NACK'd or got some otherwise-unexpected status;
@@ -156,7 +151,7 @@ static int8_t receive_readings(uint8_t (&readings)[8], float alpha) {
 		return -1;
 	}
 	uint8_t byte = TWDR;
-	readings[7] = alpha * byte + alpha_inv * readings[7];
+	readings[7] = byte;
 	// last byte send NACK to terminate transmission.
 	send_nack();
 	if(wait_for_interrupt() != TW_MR_DATA_NACK) {
@@ -169,7 +164,7 @@ static int8_t receive_readings(uint8_t (&readings)[8], float alpha) {
 }
 
 [[nodiscard]]
-int8_t update_readings(uint8_t (&readings)[8], float alpha) {
+int8_t update_readings(uint8_t (&readings)[8]) {
 	constexpr uint8_t module_addr = 0x09u;
 	goto first_attempt;
 	do {
@@ -208,10 +203,50 @@ int8_t update_readings(uint8_t (&readings)[8], float alpha) {
 			return -1;
 		}
 		// Now that we're the master reader, get the readings
-		return receive_readings(readings, alpha);
+		return receive_readings(readings);
 	} while(false);
 	assert(false && "Unreachable.");
 	return -1;
+}
+
+[[nodiscard]]
+void standardize_readings(
+	uint8_t (&readings)[8],
+	const SensorCalibration<uint8_t> (&calibrations)[8]
+) {
+	for(uint8_t i = 0u; i < sizeof(readings); ++i) {
+		readings[i] = calibrations[i].standardize(readings[i], 0u, 255u);
+	}
+}
+
+void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[8], int button_pin) {
+	pinMode(13, OUTPUT);
+	digitalWrite(13, LOW);
+	while(digitalRead(button_pin) == HIGH) {
+		// wait for button press (starts calibration process)
+	}
+	digitalWrite(13, HIGH);
+	uint8_t minimums[8] = {255u, 255u, 255u, 255u, 255u, 255u, 255u, 255u};
+	uint8_t maximums[8] = {0};
+	delay(1000);
+	while(digitalRead(button_pin) == HIGH) {
+		uint8_t readings[8] = {0};
+		update_readings(readings);
+		for(uint8_t i = 0u; i < sizeof(readings); ++i) {
+			auto value = readings[i];
+			auto& minm = minimums[i];
+			auto& maxm = maximums[i];
+			if(value < minm) {
+				minm = value;
+			} else if(value > maxm) {
+				maxm = value;
+			}
+		}
+	}
+	for(uint8_t i = 0u; i < 8u; ++i) {
+		calibrations[i] = SensorCalibration(minimums[i], maximums[i]);
+	}
+	digitalWrite(13, LOW);
 }
 
 } /* namespace ino */
