@@ -9,7 +9,6 @@ struct PIDCoeffs {
 	float d;
 };
 
-
 template <
 	class ErrorType,
 	class SumType,

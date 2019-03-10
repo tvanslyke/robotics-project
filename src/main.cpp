@@ -7,91 +7,21 @@
 #include "PIDController.h"
 
 using namespace tim::coro;
-
-void printu8(uint8_t v) {
-	char str[] = "000";
-	switch(v / 100u) {
-	case 0:
-		str[0] = ' ';
-		break;
-	case 1:
-		str[0] = '1';
-		v -= 100;
-		break;
-	case 2:
-		str[0] = '2';
-		v -= 200;
-		break;
-	}
-	auto quo = (v / 10u);
-	str[1] = '0' + quo;
-	v -= quo * 10u;
-	if(str[0] == ' ' and str[1] == '0') {
-		str[1] = ' ';
-	}
-	str[2] = '0' + (v % 10u);
-	Serial.print(str);
-}
-
-void printu16(uint16_t v) {
-	char str[] = "00000";
-	uint16_t div = 10000ul;
-	for(int i = 0; i < 5; ++i) {
-		char& c = str[i];
-		auto quo = (v / div);
-		c = '0' + quo;
-		v -= quo * div;
-		div /= 10u;
-	}
-	for(char& c: str) {
-		if(c != '0') {
-			if(c == '\0') {
-				(&c)[-1] = '0';
-			}
-			break;
-		}
-		c = ' ';
-	}
-	assert(v == 0u);
-	Serial.print(str);
-}
-
-void printu32(uint32_t v) {
-	char str[] = "0000000000";
-	uint32_t div = 1000000000ull;
-	for(int i = 0; i < (sizeof(str) - 1u); ++i) {
-		char& c = str[i];
-		uint32_t quo = (v / div);
-		c = '0' + quo;
-		v -= quo * div;
-		div /= 10u;
-	}
-	for(char& c: str) {
-		if(c != '0') {
-			if(c == '\0') {
-				(&c)[-1] = '0';
-			}
-			break;
-		}
-		c = ' ';
-	}
-	assert(v == 0u);
-	Serial.print(str);
-}
+using namespace ino;
 
 
 constexpr int8_t compute_error(const uint8_t (&readings)[8]) {
-	constexpr int16_t maxm = -128;
-	constexpr int16_t minm = 127;
-	constexpr int16_t delta = (maxm - minm) / 6l;
-	constexpr int16_t c0 = minm + delta * 0l;
-	constexpr int16_t c1 = minm + delta * 1l;
-	constexpr int16_t c2 = minm + delta * 2l;
-	constexpr int16_t c3 = minm + delta * 3l;
-	constexpr int16_t c4 = minm + delta * 4l;
-	constexpr int16_t c5 = minm + delta * 5l;
-	constexpr int16_t c6 = minm + delta * 6l;
-	constexpr int16_t div = 256l * 7l;
+	constexpr int32_t maxm = 127;
+	constexpr int32_t minm = -128;
+	constexpr int32_t delta = (maxm - minm) / 6l;
+	constexpr int32_t c0 = minm + delta * 0l;
+	constexpr int32_t c1 = minm + delta * 1l;
+	constexpr int32_t c2 = minm + delta * 2l;
+	constexpr int32_t c3 = minm + delta * 3l;
+	constexpr int32_t c4 = minm + delta * 4l;
+	constexpr int32_t c5 = minm + delta * 5l;
+	constexpr int32_t c6 = minm + delta * 6l;
+	constexpr int32_t div = 256l * 7l;
 	return static_cast<int8_t>((
 		  c0 * readings[0]
 		+ c1 * readings[1]
@@ -107,18 +37,19 @@ void escape(void* p) {
 	asm volatile("" : : "g"(p) : "memory");
 }
 
-static ino::PIDController<
-	int32_t,
-	int32_t,
-	int32_t
-> pid_control{};
+static ino::PIDController<int32_t, int32_t, int32_t> pid_control{};
 
-constexpr ino::PIDCoeffs position_coeffs{2.0, 0.1, -3.0};
+constexpr ino::PIDCoeffs coeffs{
+	0.2,
+	0.1,
+	-1.0
+};
+
 
 void setup() {
 	Serial.begin(115200);
-	Serial.println("Initializing...");
-	Serial.flush();
+	//Serial.println("Initializing...");
+	//Serial.flush();
 	Serial.setTimeout(LONG_MAX);
 	pinMode(8, INPUT_PULLUP);
 	pinMode(13, OUTPUT);
@@ -127,89 +58,122 @@ void setup() {
 	ino::left_motor_control.begin();
 	ino::right_motor_control.begin();
 	ino::setup_encoder_interrupts();
-	// pinMode(2, INPUT);
-	Serial.println("Done");
-	Serial.flush();
+	pinMode(A0, INPUT);
+	pinMode(A1, INPUT);
+	// Serial.println("Done");
+	// Serial.flush();
 }
 
 static uint8_t readings[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
 static ino::SensorCalibration<uint8_t> calibrations[8] = {};
 
-void loop() {
-	using namespace ino;
-	uint8_t speed = 0u;
-	// ino::calibrate_line_sensor(calibrations, 8);
-	while(true) {
-		// ino::update_readings(readings);
-		// ino::standardize_readings(readings, calibrations);
-		// for(uint8_t i = 0; i < 7; ++i) {
-		// 	printu8(readings[i]);
-		// 	Serial.print(' ');
-		// }
-		// Serial.print(':');
-		// Serial.println(compute_error(readings));
-		
-		// Serial.print(ino::right_motor_control.ticks());
-		// Serial.print(' ');
-		// Serial.println(ino::right_motor_control.ticks());
-		// delay(10);
-		// right_motor_control.set_speed(speed);
-		// if(speed == 0u) {
-		// 	right_motor_control.brake();
-		// 	delay(1000);
-		// 	right_motor_control.drive();
-		// }
-		// ++speed;
-		Serial.print("ino> ");
-		long setpoint = Serial.parseInt();
-		while(Serial.available() > 0) {
-			Serial.read();
+
+enum class StopType: uint8_t {
+	Full = 0b00000000u,
+	Left = 0b01111110u,
+	Right
+};
+
+[[nodiscard]]
+bool check_stop_condition(const uint8_t (&readings)[8], StopType tp, uint8_t cutoff) {
+	
+	switch(tp) {
+	case StopType::Full:
+		for(uint8_t i = 0; i < 7u; ++i) {
+			if(readings[i] > cutoff) {
+				return false;
+			}
 		}
-		for(;;) {
-			auto ticks = ino::left_motor_control.ticks();
-			int32_t error = setpoint - ticks;
-			float pid_value = pid_control.update(error, position_coeffs);
-			Serial.print("setpoint=");
-			Serial.print(setpoint);
-			Serial.print(", actual=");
-			Serial.print(ticks);
-			Serial.print(", actual2=");
-			Serial.print(ino::right_motor_control.ticks());
-			Serial.print(", pid=");
-			Serial.print(pid_value);
-			Serial.print(", lp1=");
-			Serial.print(ino::get_pulse_width<5>());
-			Serial.print(", lp2=");
-			Serial.print(ino::get_pulse_width<10>());
-			Serial.print(", rp1=");
-			Serial.print(ino::get_pulse_width<6>());
-			Serial.print(", rp2=");
-			Serial.println(ino::get_pulse_width<9>());
-			uint8_t pwm_value = 0;
-			MotorDirection dir = MotorDirection::Forward;
-			if(pid_value < 0.0f) {
-				dir = MotorDirection::Forward;
-				if(pid_value < -200.0f) {
-					pwm_value = 200u;
-				} else {
-					pwm_value = static_cast<uint8_t>(-pid_value);
-				}
-			} else {
-				dir = MotorDirection::Backward;
-				if(pid_value > 200.0f) {
-					pwm_value = 200u;
-				} else {
-					pwm_value = static_cast<uint8_t>(pid_value);
-				}
+		return true;
+	case StopType::Left:
+		for(uint8_t i = 0; i < 6u; ++i) {
+			if(readings[i] > cutoff) {
+				return false;
 			}
-			left_motor_control.set_motion(dir, pwm_value);
-			if(Serial.available() != 0) {
-				Serial.println("Reading from serial!");
-				setpoint = Serial.parseInt();
-				while(Serial.available() > 0) {
-					Serial.read();
-				}
+		}
+		for(uint8_t i = 6u; i < 7u; ++i) {
+			if(readings[i] <= cutoff) {
+				return false;
 			}
+		}
+		return true;
+	case StopType::Right:
+		for(uint8_t i = 0; i < 1u; ++i) {
+			if(readings[i] <= cutoff) {
+				return false;
+			}
+		}
+		for(uint8_t i = 1u; i < 7u; ++i) {
+			if(readings[i] > cutoff) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+}
+
+void move_until(StopType type) {
+	constexpr uint8_t base_speed = 90u;
+	for(;;) {
+		ino::update_readings(readings);
+		ino::standardize_readings(readings, calibrations);
+		auto err = compute_error(readings);
+		bool is_left = err < 0;
+		MotorDirection dir = MotorDirection::Forward;
+		auto pid_val = pid_control.update(err, coeffs);
+		err = static_cast<int8_t>(pid_val < -128 ? -128 : pid_val > 127 ? 127 : pid_val);
+		uint8_t left_motor_speed = base_speed;
+		uint8_t right_motor_speed = base_speed;
+		if(is_left) {
+			uint8_t abs_err = -err;
+			if(abs_err > base_speed) {
+				abs_err = base_speed;
+			}
+			left_motor_speed += abs_err;
+			right_motor_speed -= abs_err;
+		} else {
+			uint8_t abs_err = err;
+			if(abs_err > base_speed) {
+				abs_err = base_speed;
+			}
+			left_motor_speed -= abs_err;
+			right_motor_speed += abs_err;
+		}
+		left_motor_control.set_motion(MotorDirection::Forward, left_motor_speed);
+		right_motor_control.set_motion(MotorDirection::Forward, right_motor_speed);
+		if(check_stop_condition(StopType::Left, readings, 30u)) {
+			left_motor_control.brake();
+			right_motor_control.brake();
+			break;
+		}
+	}
+}
+
+template <class MC>
+void turn_steps(MC& motor_controller, uint8_t step_count) {
+	auto target = motor_controller.ticks() + step_count;
+	motor_controller.set_motion(MotorDirection::Forward, 90u);
+	while(motor_controller.ticks() < target) {
+		
+	}
+	motor_controller.brake();
+}
+
+void move_absolute(uint16_t step_count) {
+	auto l_target = left_motor_control.ticks() + step_count;
+	auto r_target = right_motor_control.ticks() + step_count;
+	left_motor_control.set_motion(MotorDirection::Forward, 90u);
+	right_motor_control.set_motion(MotorDirection::Forward, 90u);
+	while(true) {
+		if(left_motor_control.ticks() >= l_target) {
+			left_motor_control.brake();
+			if(right_motor_control.ticks() >= r_target) {
+				right_motor_control.brake();
+				return;
+			}
+		} else if(right_motor_control.ticks() >= r_target) {
+			right_motor_control.brake();
 		}
 	}
 }
@@ -224,11 +188,29 @@ int main(void)
 	
 	setup();
  	
-	for (;;) {
-		loop();
-		if (serialEventRun) serialEventRun();
+	ino::calibrate_line_sensor(calibrations, 8);
+	while(true) {
+		turn_steps(left_motor_control, 40u);
+		turn_steps(right_motor_control, 40u);
 	}
-        
+
+	move_until(StopType::Left);
+	move_absolute(10u);
+	turn_steps(left_motor_control, 20u);
+	move_until(StopType::Left);
+	move_absolute(10u);
+	turn_steps(right_motor_control, 40u);
+	move_until(StopType::Right);
+	move_absolute(10u);
+	turn_steps(left_motor_control, 40u);
+	
+	move_until(StopType::Full);
+	move_until(StopType::Left);
+	move_absolute(10u);
+	turn_steps(right_motor_control, 40u);
+	move_until(StopType::Left);
+	
+	for(;;){}
 	return 0;
 }
 

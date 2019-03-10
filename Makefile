@@ -11,7 +11,7 @@ arduino/libarduino.a: ./arduino/*.h ./arduino/*.cpp ./arduino/*.c
 	cd arduino/ && $(MAKE)
 
 install: release/firmware.elf
-	avrdude -v -D -patmega328p -carduino -b57600 -C/usr/share/arduino/hardware/tools/avrdude.conf -P/dev/ttyUSB0 -Uflash:w:release/firmware.hex:i
+	avrdude -V -v -D -patmega328p -carduino -b57600 -C/usr/share/arduino/hardware/tools/avrdude.conf -P/dev/ttyUSB0 -Uflash:w:release/firmware.hex:i
 
 serial:
 	picocom --echo --omap=crlf --baud=115200 /dev/ttyUSB0

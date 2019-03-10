@@ -109,9 +109,9 @@ private:
 	void step() {
 		// volatile uint8_t&  *reinterpret_cast<volatile uint8_t*>(&ticks_);
 		if(travel_direction() == MotorDirection::Forward) {
-			--ticks_;
-		} else if(travel_direction() == MotorDirection::Backward) {
 			++ticks_;
+		} else if(travel_direction() == MotorDirection::Backward) {
+			--ticks_;
 		}
 	}
 

@@ -221,11 +221,11 @@ void standardize_readings(
 
 void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[8], int button_pin) {
 	pinMode(13, OUTPUT);
-	digitalWrite(13, LOW);
+	digitalWrite(13, HIGH);
 	while(digitalRead(button_pin) == HIGH) {
 		// wait for button press (starts calibration process)
 	}
-	digitalWrite(13, HIGH);
+	digitalWrite(13, LOW);
 	uint8_t minimums[8] = {255u, 255u, 255u, 255u, 255u, 255u, 255u, 255u};
 	uint8_t maximums[8] = {0};
 	delay(1000);
@@ -246,7 +246,7 @@ void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[8], int bu
 	for(uint8_t i = 0u; i < 8u; ++i) {
 		calibrations[i] = SensorCalibration(minimums[i], maximums[i]);
 	}
-	digitalWrite(13, LOW);
+	digitalWrite(13, HIGH);
 }
 
 } /* namespace ino */
