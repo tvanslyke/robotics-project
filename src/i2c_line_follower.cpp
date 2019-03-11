@@ -3,7 +3,8 @@
 #include <avr/interrupt.h>
 #include <compat/twi.h>
 #include "Arduino.h" // for digitalWrite
-#include "coro.h"
+#include "Optional.h"
+#include "assert.h"
 
 static constexpr long i2c_clock_frequency = 400000l;
 
@@ -123,48 +124,46 @@ struct ScopedI2CTransmission {
 	}
 };
 
-/* Called only when we're master reader mode. */
-static int8_t receive_readings(uint8_t (&readings)[8]) {
-	// Do this for the first 7 samples; the last sample (16th byte) has slightly different logic.
-	for(uint8_t i = 0u; i < 7u; ++i) {
-		send_ack();
-		if(wait_for_interrupt() != TW_MR_DATA_ACK) {
-			// NACK'd or got some otherwise-unexpected status;
-			// end the transmission and return error.
-			return -1;
-		}
-		uint8_t byte = TWDR;
-		readings[i] = byte;
-		send_ack();
-		if(wait_for_interrupt() != TW_MR_DATA_ACK) {
-			// NACK'd or got some otherwise-unexpected status;
-			// end the transmission and return error.
-			return -1;
-		}
-		(void)TWDR;
-	}
-	// 15th byte do the same
+template <size_t N, class ... Readings>
+/* Called only when we're in master reader mode. */
+[[gnu::always_inline]]
+static Optional<LineSensorReadings> receive_readings(Readings ... readings) {
+	// Do this for the first N - 1 samples; the last sample has slightly different logic.
+	static_assert(N > 0u);
+	constexpr auto reading_count = sizeof ... (readings);
 	send_ack();
 	if(wait_for_interrupt() != TW_MR_DATA_ACK) {
 		// NACK'd or got some otherwise-unexpected status;
 		// end the transmission and return error.
-		return -1;
+		return nullopt;
 	}
-	uint8_t byte = TWDR;
-	readings[7] = byte;
-	// last byte send NACK to terminate transmission.
-	send_nack();
-	if(wait_for_interrupt() != TW_MR_DATA_NACK) {
-		// NACK'd or got some otherwise-unexpected status;
-		// end the transmission and return error.
-		return -1;
+	uint8_t next_reading = TWDR;
+	if constexpr(reading_count != (N - 1u)) {
+		send_ack();
+		if(wait_for_interrupt() != TW_MR_DATA_ACK) {
+			// NACK'd or got some otherwise-unexpected status;
+			// end the transmission and return error.
+			return nullopt;
+		}
+		(void)TWDR;
+		// more readings; recurse.
+		return receive_readings<N>(readings ..., next_reading);
+	} else {
+		send_nack();
+		if(wait_for_interrupt() != TW_MR_DATA_NACK) {
+			// NACK'd or got some otherwise-unexpected status;
+			// end the transmission and return error.
+			return nullopt;
+		}
+		(void)TWDR;
+		// no more readings
+		// throw out the last reading because the last sensor is broken :(
+		return Optional{LineSensorReadings{readings ...}};
 	}
-	(void)TWDR;
-	return 0;
 }
 
 [[nodiscard]]
-int8_t update_readings(uint8_t (&readings)[8]) {
+Optional<LineSensorReadings> read_line_sensor() {
 	constexpr uint8_t module_addr = 0x09u;
 	goto first_attempt;
 	do {
@@ -182,7 +181,7 @@ int8_t update_readings(uint8_t (&readings)[8]) {
 			continue;
 		default:	
 			// Error; DON'T send the STOP condition because sending the START condition failed
-			return -1;
+			return nullopt;
 		}
 
 		// Destructor sends STOP condition.
@@ -200,40 +199,48 @@ int8_t update_readings(uint8_t (&readings)[8]) {
 		default:
 			// NACK'd or got some otherwise-unexpected status;
 			// end the transmission and return error.
-			return -1;
+			return nullopt;
 		}
 		// Now that we're the master reader, get the readings
-		return receive_readings(readings);
+		return receive_readings<8u>();
 	} while(false);
 	assert(false && "Unreachable.");
-	return -1;
+	return nullopt;
 }
+
 
 [[nodiscard]]
-void standardize_readings(
-	uint8_t (&readings)[8],
-	const SensorCalibration<uint8_t> (&calibrations)[8]
+LineSensorReadings standardize_readings(
+	LineSensorReadings readings,
+	const SensorCalibration<uint8_t> (&calibrations)[7]
 ) {
-	for(uint8_t i = 0u; i < sizeof(readings); ++i) {
-		readings[i] = calibrations[i].standardize(readings[i], 0u, 255u);
-	}
+	readings.r0 = calibrations[0].standardize(readings.r0, 0u, 255u);
+	readings.r1 = calibrations[1].standardize(readings.r1, 0u, 255u);
+	readings.r2 = calibrations[2].standardize(readings.r2, 0u, 255u);
+	readings.r3 = calibrations[3].standardize(readings.r3, 0u, 255u);
+	readings.r4 = calibrations[4].standardize(readings.r4, 0u, 255u);
+	readings.r5 = calibrations[5].standardize(readings.r5, 0u, 255u);
+	readings.r6 = calibrations[6].standardize(readings.r6, 0u, 255u);
+	return readings;
 }
 
-void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[8], int button_pin) {
+void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[7], int button_pin) {
 	pinMode(13, OUTPUT);
 	digitalWrite(13, HIGH);
 	while(digitalRead(button_pin) == HIGH) {
 		// wait for button press (starts calibration process)
 	}
 	digitalWrite(13, LOW);
-	uint8_t minimums[8] = {255u, 255u, 255u, 255u, 255u, 255u, 255u, 255u};
-	uint8_t maximums[8] = {0};
+	uint8_t minimums[7] = {255u, 255u, 255u, 255u, 255u, 255u, 255u};
+	uint8_t maximums[7] = {0};
 	delay(1000);
 	while(digitalRead(button_pin) == HIGH) {
-		uint8_t readings[8] = {0};
-		update_readings(readings);
-		for(uint8_t i = 0u; i < sizeof(readings); ++i) {
-			auto value = readings[i];
+		auto readings = read_line_sensor();
+		while(not readings) {
+			readings = read_line_sensor();
+		}
+		for(uint8_t i = 0u; i < readings->size(); ++i) {
+			auto value = (*readings)[i];
 			auto& minm = minimums[i];
 			auto& maxm = maximums[i];
 			if(value < minm) {
@@ -243,7 +250,7 @@ void calibrate_line_sensor(SensorCalibration<uint8_t> (&calibrations)[8], int bu
 			}
 		}
 	}
-	for(uint8_t i = 0u; i < 8u; ++i) {
+	for(uint8_t i = 0u; i < 7u; ++i) {
 		calibrations[i] = SensorCalibration(minimums[i], maximums[i]);
 	}
 	digitalWrite(13, HIGH);

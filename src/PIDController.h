@@ -1,12 +1,25 @@
 #ifndef INO_PIDCONTROLLER_H
 #define INO_PIDCONTROLLER_H
 
+#include <HardwareSerial.h>
+
 namespace ino {
 
 struct PIDCoeffs {
 	float p;
 	float i;
 	float d;
+
+	void show() const {
+		Serial.print("p=");
+		Serial.print(p);
+		Serial.print(", i=");
+		Serial.print(i);
+		Serial.print(", d=");
+		Serial.print(d);
+
+		Serial.println("");
+	}
 };
 
 template <
